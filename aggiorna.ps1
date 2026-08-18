@@ -61,9 +61,12 @@ function Show-Globe {
     Enable-Ansi
     $txt = (Invoke-WebRequest -Uri "$RAW/globe.txt" -UseBasicParsing -TimeoutSec 8).Content
     $lines = $txt -split "`r?`n"
-    $Hh = 31
+    $Hh = 23
     $nf = [Math]::Floor($lines.Count / $Hh)
     if ($nf -lt 1) { return }
+    # se la finestra e' troppo piccola l'animazione "ballerebbe": la salto
+    try { $cw=[Console]::WindowWidth; $ch=[Console]::WindowHeight } catch { return }
+    if ($cw -lt 78 -or $ch -lt 24) { return }
     try { [Console]::CursorVisible = $false } catch {}
     Clear-Host
     for ($f = 0; $f -lt $nf; $f++) {

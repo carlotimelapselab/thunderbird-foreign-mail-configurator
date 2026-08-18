@@ -22,8 +22,11 @@ show_globe(){
     G="$(curl -fsSL "$RAW/globe.txt" 2>/dev/null)"
     [ -z "$G" ] && exit 0
     F="$(mktemp /tmp/tl_globe.XXXXXX)"; printf '%s' "$G" > "$F"
-    H=31; nf=$(( $(wc -l < "$F") / H ))
+    H=23; nf=$(( $(wc -l < "$F") / H ))
     [ "$nf" -lt 1 ] && { rm -f "$F"; exit 0; }
+    # se la finestra e' troppo piccola l'animazione "ballerebbe": la salto
+    cols=$(tput cols 2>/dev/null || echo 0); rows=$(tput lines 2>/dev/null || echo 0)
+    if [ "${cols:-0}" -lt 78 ] || [ "${rows:-0}" -lt 24 ]; then rm -f "$F"; exit 0; fi
     printf '\033[?25l\033[2J'
     i=0
     while [ "$i" -lt "$nf" ]; do

@@ -45,8 +45,8 @@ COORD = {
 'org.ua':(49.0,32.0),'ua':(49.0,32.0),
 }
 
-# --- geometria del globo ---------------------------------------------
-W,H=50,25; Rh,Rv=23.0,11.5; cx,cy=24.5,12.0
+# --- geometria del globo (compatta: sta in un terminale 80x24) -------
+W,H=40,19; Rh,Rv=18.0,9.0; cx,cy=19.5,9.0
 Lg=(-0.5,0.45,0.74); _ln=math.sqrt(sum(c*c for c in Lg)); Lg=tuple(c/_ln for c in Lg)
 
 # --- mappa dei continenti reali --------------------------------------
@@ -74,11 +74,11 @@ GPAD=(WF-W)//2
 LPAD=(WF-LOGO_VIS)//2
 
 def logo_lines():
-    out=[" "*WF]
+    # compatto: solo le 4 righe del logo (niente righe vuote) per stare in 80x24
+    out=[]
     for i in range(len(TL)):
         vis=(" "*LPAD)+WHITE+TL[i].ljust(TLw)+RESET+"  "+BLUE+MO[i].ljust(MOw)+RESET
         out.append(vis)
-    out.append(" "*WF)
     return out
 LOGO=logo_lines(); LH=len(LOGO)
 
@@ -144,7 +144,7 @@ def render(keys):
 if __name__=="__main__":
     keys = keys_from_prefs(sys.argv[1]) if len(sys.argv)>1 else set(COORD.keys())
     n,missing,fh = render(keys)
-    print("globe.txt creato: %d paesi illuminati, %d righe per frame (72 frame)." % (n,fh))
+    print("globe.txt creato: %d paesi illuminati, %d righe per frame (72 frame), larghezza %d colonne." % (n,fh,WF))
     if missing:
         print("ATTENZIONE - domini SENZA coordinate (non illuminati):", ", ".join(missing))
         print("Aggiungi le coordinate nel dizionario COORD dentro crea-globe.py e rilancia.")

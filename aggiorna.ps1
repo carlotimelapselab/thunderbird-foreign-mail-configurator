@@ -5,12 +5,45 @@
 #  Eseguito online dal launcher fisso Aggiorna-Timelapse.bat.
 # =====================================================================
 $ErrorActionPreference = 'Stop'
+# --- rete di sicurezza: qualsiasi errore imprevisto NON chiude la finestra,
+#     ma mostra il messaggio e aspetta INVIO ------------------------------
+trap {
+  Write-Host ""
+  Write-Host "!!! ERRORE imprevisto: $($_.Exception.Message)" -ForegroundColor Red
+  if ($_.InvocationInfo) { Write-Host ("    (riga " + $_.InvocationInfo.ScriptLineNumber + ")") -ForegroundColor DarkGray }
+  Write-Host "    Copia questo messaggio e inviamelo per risolvere." -ForegroundColor Yellow
+  try { Read-Host "Premi INVIO per chiudere" } catch {}
+  exit 1
+}
 $RAW = 'https://raw.githubusercontent.com/carlotimelapselab/thunderbird-foreign-mail-configurator/main'
 $ProfileRel = 'Profiles/qajfqcsf.Timelapse Siti Esteri'
 $ProfileName = 'Timelapse Siti Esteri'
 $ProfileDirName = 'qajfqcsf.Timelapse Siti Esteri'
 
 function Say($m,$c='Gray'){ Write-Host $m -ForegroundColor $c }
+
+# PBKDF2-HMAC-SHA256 compatibile con TUTTE le versioni di Windows/.NET
+# (usa HMACSHA256, presente da .NET 2.0). Evita di dipendere dall'overload
+# a 4 argomenti di Rfc2898DeriveBytes (che manca su .NET < 4.7.2).
+Add-Type @"
+using System;
+using System.Security.Cryptography;
+public static class TLKdf {
+  static byte[] Cat(byte[] a, byte[] b){ byte[] r=new byte[a.Length+b.Length]; Array.Copy(a,r,a.Length); Array.Copy(b,0,r,a.Length,b.Length); return r; }
+  public static byte[] Pbkdf2(string pass, byte[] salt, int iter, int len){
+    using(var h = new HMACSHA256(System.Text.Encoding.UTF8.GetBytes(pass))){
+      int hlen=32; int blocks=(len+hlen-1)/hlen; byte[] outb=new byte[blocks*hlen];
+      for(int i=1;i<=blocks;i++){
+        byte[] ib=BitConverter.GetBytes(i); if(BitConverter.IsLittleEndian) Array.Reverse(ib);
+        byte[] u=h.ComputeHash(Cat(salt,ib)); byte[] t=(byte[])u.Clone();
+        for(int j=1;j<iter;j++){ u=h.ComputeHash(u); for(int k=0;k<hlen;k++) t[k]^=u[k]; }
+        Array.Copy(t,0,outb,(i-1)*hlen,hlen);
+      }
+      byte[] res=new byte[len]; Array.Copy(outb,res,len); return res;
+    }
+  }
+}
+"@ -ErrorAction SilentlyContinue
 
 function Enable-Ansi {
   try {
@@ -59,10 +92,10 @@ while (Get-Process -Name 'thunderbird' -ErrorAction SilentlyContinue) {
 }
 
 # --- 2. Passphrase ---------------------------------------------------
-$sec = Read-Host "Inserisci la passphrase" -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-$PASS = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+# NB: input in chiaro (non a pallini) apposta, cosi' l'INCOLLA funziona su
+# tutte le console di Windows (con i pallini l'incolla infila un solo carattere).
+Say "Inserisci la passphrase e premi INVIO (la puoi INCOLLARE con Ctrl+V o clic destro):" 'Gray'
+$PASS = (Read-Host "Passphrase").Trim()
 if ([string]::IsNullOrEmpty($PASS)) { Say "Passphrase vuota. Annullo." 'Red'; Read-Host "INVIO per uscire"; exit 1 }
 
 # --- 3. Scarica il bundle cifrato ------------------------------------
@@ -78,14 +111,21 @@ $bytes = [IO.File]::ReadAllBytes($enc)
 if ($bytes.Length -lt 16 -or ([Text.Encoding]::ASCII.GetString($bytes,0,8)) -ne 'Salted__') {
   Say "File non valido (manca header)." 'Red'; Read-Host "INVIO per uscire"; exit 1
 }
-$salt = $bytes[8..15]
-$ct   = $bytes[16..($bytes.Length-1)]
-$kdf  = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
-          $PASS, [byte[]]$salt, 200000, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
-$keyiv = $kdf.GetBytes(48)
+$salt = [byte[]]$bytes[8..15]
+$ct   = [byte[]]$bytes[16..($bytes.Length-1)]
+# derivazione chiave: metodo nativo veloce se disponibile, altrimenti fallback compatibile
+$keyiv = $null
+try {
+  $kdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
+           $PASS, $salt, 200000, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+  $keyiv = $kdf.GetBytes(48)
+} catch {
+  Say "Derivo la chiave in modalita' compatibile..." 'Gray'
+  $keyiv = [TLKdf]::Pbkdf2($PASS, $salt, 200000, 48)
+}
 $aes = [System.Security.Cryptography.Aes]::Create()
 $aes.KeySize = 256; $aes.Mode = 'CBC'; $aes.Padding = 'PKCS7'
-$aes.Key = $keyiv[0..31]; $aes.IV = $keyiv[32..47]
+$aes.Key = [byte[]]($keyiv[0..31]); $aes.IV = [byte[]]($keyiv[32..47])
 try {
   $dec = $aes.CreateDecryptor()
   $plain = $dec.TransformFinalBlock([byte[]]$ct, 0, $ct.Length)

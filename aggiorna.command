@@ -6,6 +6,11 @@
 #  Eseguito online dal launcher fisso Aggiorna-Timelapse.command.
 # =====================================================================
 set -e
+# --- non chiudere mai la finestra in silenzio: se qualcosa fallisce,
+#     mostra riga ed errore e aspetta INVIO ------------------------------
+ERRLINE=0; TMP=""
+trap 'ERRLINE=$LINENO' ERR
+trap 'c=$?; [ -n "$TMP" ] && rm -rf "$TMP" 2>/dev/null; if [ "$c" -ne 0 ]; then echo ""; echo "!!! Interrotto (codice $c), intorno alla riga $ERRLINE."; echo "    Copia queste righe e inviamele per capire il problema."; printf "Premi INVIO per chiudere..."; read -r _ </dev/tty 2>/dev/null; fi' EXIT
 RAW="https://raw.githubusercontent.com/carlotimelapselab/thunderbird-foreign-mail-configurator/main"
 PROFILE_REL="Profiles/qajfqcsf.Timelapse Siti Esteri"
 PROFILE_NAME="Timelapse Siti Esteri"
@@ -46,18 +51,21 @@ while pgrep -x thunderbird >/dev/null 2>&1; do
 done
 
 # --- 2. Passphrase (letta dal terminale) -----------------------------
-printf "Inserisci la passphrase: "
+printf "Inserisci la passphrase (puoi incollarla con Cmd+V): "
 read -rs PASS </dev/tty
 echo ""
+# rimuove spazi/ritorni a capo accidentali in testa e in coda
+PASS="${PASS#"${PASS%%[![:space:]]*}"}"
+PASS="${PASS%"${PASS##*[![:space:]]}"}"
 if [ -z "$PASS" ]; then echo "Passphrase vuota. Annullo."; exit 1; fi
 
 # --- 3. Cartella Thunderbird (override con TB_DIR se serve) -----------
 TB_DIR="${TB_DIR:-$HOME/Library/Thunderbird}"
 if [ ! -d "$TB_DIR" ]; then mkdir -p "$TB_DIR"; fi
+echo "Cartella Thunderbird: $TB_DIR"
 
 # --- 4. Scarica e decifra --------------------------------------------
 TMP="$(mktemp -d /tmp/tl_tb.XXXXXX)"
-trap 'rm -rf "$TMP"' EXIT
 echo "Scarico il profilo cifrato..."
 curl -fsSL "$RAW/profilo.enc" -o "$TMP/profilo.enc"
 echo "Decifro..."
